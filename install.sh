@@ -2,10 +2,13 @@
 set -e
 
 DEST="$HOME/.jwf-menu"
+REPO_URL="https://raw.githubusercontent.com/marnezcr/MenuTx/main/menu.sh"
+
+# Buat direktori tujuan
 mkdir -p "$DEST" "$PREFIX/bin"
 
-# Salin menu utama
-cp -f menu.sh "$DEST/menu.sh"
+# Unduh menu.sh langsung dari GitHub
+curl -fsSL "$REPO_URL" -o "$DEST/menu.sh"
 chmod +x "$DEST/menu.sh"
 
 # Backup bashrc
