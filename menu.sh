@@ -133,7 +133,7 @@ while true; do
   clear
   echo -e "\e[1;36m╔════════════════════════════════════════════════╗\e[0m"
   echo -e "\e[1;36m║\e[0m          🌟 \e[1;33mSELAMAT DATANG DI TERMUX\e[0m 🌟        \e[1;36m║\e[0m"
-  echo -e "\e[1;36m║\e[0m                 \e[90mBY MARNEZ CREATION\e[0m               \e[1;34m║\e[0m"
+  echo -e "\e[1;36m║\e[0m                 \e[90mBY MARNEZ CREATION\e[0m             \e[1;36m║\e[0m"
   echo -e "\e[1;36m╚════════════════════════════════════════════════╝\e[0m"
   echo
   echo -e "\e[1;33m📂 Pilih program yang ingin dijalankan:\e[0m"
@@ -180,9 +180,9 @@ while true; do
       read -p "ENTER untuk kembali ke menu..."
       ;;
     7)  # Case untuk adb
-      if [ -f "$HOME/adb.sh" ]; then
+      if [ -f "$HOME/MenuTx/adb.sh" ]; then
         echo -e "\e[90m🚀 Menjalankan: ./adb.sh\e[0m"
-        bash "$HOME/adb.sh"
+        bash "$HOME/MenuTx/adb.sh"
       else
         echo -e "\e[31m❌ File adb.sh tidak ditemukan di $HOME\e[0m"
       fi
