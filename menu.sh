@@ -133,7 +133,7 @@ while true; do
   clear
   echo -e "\e[1;36m╔════════════════════════════════════════════════╗\e[0m"
   echo -e "\e[1;36m║\e[0m          🌟 \e[1;33mSELAMAT DATANG DI TERMUX\e[0m 🌟        \e[1;36m║\e[0m"
-  echo -e "\e[1;36m║\e[0m                 \e[90mBY Corrodedvomit Edit By Marnez\e[0m               \e[1;36m║\e[0m"
+  echo -e "\e[1;36m║\e[0m                 \e[90mBY MARNEZ CREATION\e[0m               \e[1;34m║\e[0m"
   echo -e "\e[1;36m╚════════════════════════════════════════════════╝\e[0m"
   echo
   echo -e "\e[1;33m📂 Pilih program yang ingin dijalankan:\e[0m"
@@ -144,10 +144,11 @@ while true; do
   echo -e "  \e[35m[4]\e[0m ➤ Jalankan dor8"
   echo -e "  \e[35m[5]\e[0m ➤ Jalankan reedem"
   echo -e "  \e[35m[6]\e[0m ➤ Jalankan RISK"
+  echo -e "  \e[35m[7]\e[0m ➤ Jalankan adb"  # Opsi baru untuk adb
 
   EXCLUDE_SET=" anomali-xl me-cli xldor dor8 reedem "
   DYN_NAMES=()
-  n=7
+  n=8  # Diubah dari 7 menjadi 8 karena ada opsi adb
   for dir in $(find "$HOME" -maxdepth 1 -mindepth 1 -type d -printf "%f\n" | sort); do
     case "$dir" in .*) continue ;; esac
     [[ " $EXCLUDE_SET " == *" $dir "* ]] && continue
@@ -178,11 +179,20 @@ while true; do
       su -c risk
       read -p "ENTER untuk kembali ke menu..."
       ;;
+    7)  # Case untuk adb
+      if [ -f "$HOME/adb.sh" ]; then
+        echo -e "\e[90m🚀 Menjalankan: ./adb.sh\e[0m"
+        bash "$HOME/adb.sh"
+      else
+        echo -e "\e[31m❌ File adb.sh tidak ditemukan di $HOME\e[0m"
+      fi
+      read -p "ENTER untuk kembali ke menu..."
+      ;;
     a|A) add_new_repo ;;
     d|D) delete_repo ;;
     u|U) update_repo ;;
     [0-20]*)
-      index=$((pilih - 7))
+      index=$((pilih - 8))  # Diubah dari 7 menjadi 8 karena ada opsi adb
       if [ $index -ge 0 ] && [ $index -lt ${#DYN_NAMES[@]} ]; then
         cd "$HOME/${DYN_NAMES[$index]}" || {
           echo -e "\e[31m❌ Gagal masuk folder.\e[0m"
@@ -198,7 +208,7 @@ while true; do
       fi
       ;;
     m|M)
-      echo -e "\n\e[36mKeluar dari menu. Selamat bekerja di shell biasa! 🧑‍💻\e[0m"
+      echo -e "\n\e[36mKeluar dari menu. Berjanan di shell biasa! 🧑‍💻\e[0m"
       break
       ;;
     q|Q)
