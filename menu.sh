@@ -1,6 +1,7 @@
 #!/bin/bash
 # ==========================================
-# 🌟 TERMUX MENU BY CORRODEDVOMIT
+# 🌟 TERMUX MENU BY CORRODEDVOMIT 
+# 🙏 EDIT BY MARNEZ
 # ==========================================
 
 REPO_LIST="$HOME/.termux_repos"
