@@ -15,7 +15,7 @@ https://github.com/rakarmp/Risk
 Salin dan tempel perintah ini di Termux kamu 👇
 ```
 git clone https://github.com/marnezcr/MenuTx
-cd my-termux-menu
+cd MenuTX
 ```
 
 ```bash
