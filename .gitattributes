@@ -1,2 +1,9 @@
+# PAKSA SEMUA .sh PAKAI LF (bahkan saat edit di GitHub Web)
 *.sh text eol=lf
 *.bash text eol=lf
+*.zsh text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+
+# Pastikan file ini sendiri juga LF
+.gitattributes text eol=lf
