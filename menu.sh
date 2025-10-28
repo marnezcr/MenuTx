@@ -132,22 +132,22 @@ update_repo() {
 while true; do
   clear
   echo -e "\e[1;36m╔════════════════════════════════════════════════╗\e[0m"
-  echo -e "\e[1;36m║\e[0m          🌟 \e[1;33mSELAMAT DATANG DI TERMUX\e[0m 🌟        \e[1;36m║\e[0m"
+  echo -e "\e[1;36m║\e[0m             ☢️ \e[1;33mMARNEZ MOD MENU TERMUX\e[0m ☢️         \e[1;36m║\e[0m"
   echo -e "\e[1;36m║\e[0m                 \e[90mBY MARNEZ CREATION\e[0m             \e[1;36m║\e[0m"
   echo -e "\e[1;36m╚════════════════════════════════════════════════╝\e[0m"
   echo
-  echo -e "\e[1;33m📂 Pilih program yang ingin dijalankan:\e[0m"
+  echo -e "\e[1;33m📂 💉 PILIH DOR SESUAI KEBUTUHAN 🔐:\e[0m"
 
-  echo -e "  \e[35m[1]\e[0m ➤ Jalankan anomali-xl"
-  echo -e "  \e[35m[2]\e[0m ➤ Jalankan me-cli"
-  echo -e "  \e[35m[3]\e[0m ➤ Jalankan xldor"
-  echo -e "  \e[35m[4]\e[0m ➤ Jalankan dor8"
-  echo -e "  \e[35m[5]\e[0m ➤ Jalankan reedem"
+  echo -e "  \e[33m[1]\e[0m ➤ Jalankan anomali-xl"
+  echo -e "  \e[33m[2]\e[0m ➤ Jalankan me-cli"
+  echo -e "  \e[33m[3]\e[0m ➤ Jalankan xldor"
+  echo -e "  \e[33m[4]\e[0m ➤ Jalankan dor8"
+  echo -e "  \e[33m[5]\e[0m ➤ Jalankan reedem"
   echo
-  echo -e "\e[1;36m💡 MARNEZ TOOLS 💡\e[0m"
-  echo -e "  \e[35m[6]\e[0m ➤ Jalankan RISK"
-  echo -e "  \e[35m[7]\e[0m ➤ Jalankan adb"
-  echo -e "  \e[35m[8]\e[0m ➤ Optimasi Ram"  # Opsi baru untuk Optimasi Ram
+  echo -e "\e[1;36m☣️ MARNEZ TOOLS ☣️\e[0m"
+  echo -e "  \e[36m[6]\e[0m ➤ Jalankan RISK ☠️"
+  echo -e "  \e[36m[7]\e[0m ➤ Jalankan adb 📵"
+  echo -e "  \e[36m[8]\e[0m ➤ Optimasi Ram 🧹"  # Opsi baru untuk Optimasi Ram
 
   EXCLUDE_SET=" anomali-xl me-cli xldor dor8 reedem "
   DYN_NAMES=()
@@ -162,11 +162,11 @@ while true; do
   done
 
   echo
-  echo -e "  \e[35m[a]\e[0m ➤ Tambah repo baru"
-  echo -e "  \e[35m[d]\e[0m ➤ Hapus repo dari menu"
-  echo -e "  \e[35m[u]\e[0m ➤ Update semua repo"
-  echo -e "  \e[35m[m]\e[0m ➤ Keluar menu (masuk shell biasa)"
-  echo -e "  \e[31m[q]\e[0m ➤ Keluar Termux"
+  echo -e "  \e[33m[a]\e[0m ➤ Tambah repo baru"
+  echo -e "  \e[33m[d]\e[0m ➤ Hapus repo dari menu"
+  echo -e "  \e[33m[u]\e[0m ➤ Update semua repo"
+  echo -e "  \e[33m[m]\e[0m ➤ Keluar menu (masuk shell biasa)"
+  echo -e "  \e[36m[q]\e[0m ➤ Keluar Termux"
   echo
 
   read -p "Masukkan pilihan [1-${n}/a/d/u/m/q]: " pilih
