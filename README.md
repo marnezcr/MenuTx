@@ -1,5 +1,5 @@
 
-#  🔥TERMUX MENU 🔥
+# ðŸ”¥TERMUX MENUðŸ”¥
 
 
 ##  PENAMBAHAN TOOLS
@@ -52,7 +52,9 @@ cd MenuTx
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/marnezcr/MenuTx/main/install.sh)
 
+```
 ## Sumber Asli
 ```
 Lupa belum ketemu  yang tahu info
 ```
+
