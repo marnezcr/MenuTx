@@ -11,6 +11,26 @@ mkdir -p "$DEST" "$PREFIX/bin"
 curl -fsSL "$REPO_URL" -o "$DEST/menu.sh"
 chmod +x "$DEST/menu.sh"
 
+# Cek dan unduh adb.sh jika tidak ditemukan
+if [ -f "$DEST/adb.sh" ]; then
+  echo "File adb.sh sudah ada, memberikan izin eksekusi..."
+  chmod +x "$DEST/adb.sh"
+else
+  echo "File adb.sh tidak ditemukan, mengunduh dari repositori..."
+  curl -fsSL "https://raw.githubusercontent.com/marnezcr/MenuTx/main/adb.sh" -o "$DEST/adb.sh"
+  chmod +x "$DEST/adb.sh"
+fi
+
+# Cek dan unduh ram.sh jika tidak ditemukan
+if [ -f "$DEST/ram.sh" ]; then
+  echo "File ram.sh sudah ada, memberikan izin eksekusi..."
+  chmod +x "$DEST/ram.sh"
+else
+  echo "File ram.sh tidak ditemukan, mengunduh dari repositori..."
+  curl -fsSL "https://raw.githubusercontent.com/marnezcr/MenuTx/main/ram.sh" -o "$DEST/ram.sh"
+  chmod +x "$DEST/ram.sh"
+fi
+
 # Backup bashrc
 if [ -f "$HOME/.bashrc" ]; then
   cp -f "$HOME/.bashrc" "$HOME/.bashrc.bak.jwf"
