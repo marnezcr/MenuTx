@@ -1,5 +1,5 @@
 
-# ðŸ”¥TERMUX MENUðŸ”¥
+# 🔥 TERMUX MENU 🔥
 
 
 ##  PENAMBAHAN TOOLS
