@@ -17,7 +17,7 @@ if [ -f "$DEST/adb.sh" ]; then
   chmod +x "$DEST/adb.sh"
 else
   echo "File adb.sh tidak ditemukan, mengunduh dari repositori..."
-  curl -fsSL "https://raw.githubusercontent.com/marnezcr/MenuTx/main/adb.sh" -o "$DEST/adb.sh"
+  curl -fsSL "https://raw.githubusercontent.com/marnezcr/MenuTx/adb.sh" -o "$DEST/adb.sh"
   chmod +x "$DEST/adb.sh"
 fi
 
@@ -27,7 +27,7 @@ if [ -f "$DEST/ram.sh" ]; then
   chmod +x "$DEST/ram.sh"
 else
   echo "File ram.sh tidak ditemukan, mengunduh dari repositori..."
-  curl -fsSL "https://raw.githubusercontent.com/marnezcr/MenuTx/main/ram.sh" -o "$DEST/ram.sh"
+  curl -fsSL "https://raw.githubusercontent.com/marnezcr/MenuTx/ram.sh" -o "$DEST/ram.sh"
   chmod +x "$DEST/ram.sh"
 fi
 
