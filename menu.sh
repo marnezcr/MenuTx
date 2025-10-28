@@ -143,12 +143,15 @@ while true; do
   echo -e "  \e[35m[3]\e[0m ➤ Jalankan xldor"
   echo -e "  \e[35m[4]\e[0m ➤ Jalankan dor8"
   echo -e "  \e[35m[5]\e[0m ➤ Jalankan reedem"
+  echo
+  echo -e "\e[1;36m💡 MARNEZ TOOLS 💡\e[0m"
   echo -e "  \e[35m[6]\e[0m ➤ Jalankan RISK"
-  echo -e "  \e[35m[7]\e[0m ➤ Jalankan adb"  # Opsi baru untuk adb
+  echo -e "  \e[35m[7]\e[0m ➤ Jalankan adb"
+  echo -e "  \e[35m[8]\e[0m ➤ Optimasi Ram"  # Opsi baru untuk Optimasi Ram
 
   EXCLUDE_SET=" anomali-xl me-cli xldor dor8 reedem "
   DYN_NAMES=()
-  n=8  # Diubah dari 7 menjadi 8 karena ada opsi adb
+  n=9  # Diubah dari 8 menjadi 9 karena ada opsi baru
   for dir in $(find "$HOME" -maxdepth 1 -mindepth 1 -type d -printf "%f\n" | sort); do
     case "$dir" in .*) continue ;; esac
     [[ " $EXCLUDE_SET " == *" $dir "* ]] && continue
@@ -179,12 +182,21 @@ while true; do
       su -c risk
       read -p "ENTER untuk kembali ke menu..."
       ;;
-    7)  # Case untuk adb
+    7)  
       if [ -f "$HOME/MenuTx/adb.sh" ]; then
         echo -e "\e[90m🚀 Menjalankan: ./adb.sh\e[0m"
         bash "$HOME/MenuTx/adb.sh"
       else
-        echo -e "\e[31m❌ File adb.sh tidak ditemukan di $HOME\e[0m"
+        echo -e "\e[31m❌ File adb.sh tidak ditemukan di $HOME/MenuTx\e[0m"
+      fi
+      read -p "ENTER untuk kembali ke menu..."
+      ;;
+    8)  # Case untuk Optimasi Ram
+      if [ -f "$HOME/MenuTx/ram.sh" ]; then
+        echo -e "\e[90m🚀 Menjalankan: ./ram.sh\e[0m"
+        bash "$HOME/MenuTx/ram.sh"
+      else
+        echo -e "\e[31m❌ File ram.sh tidak ditemukan di $HOME/MenuTx\e[0m"
       fi
       read -p "ENTER untuk kembali ke menu..."
       ;;
@@ -192,7 +204,7 @@ while true; do
     d|D) delete_repo ;;
     u|U) update_repo ;;
     [0-20]*)
-      index=$((pilih - 8))  # Diubah dari 7 menjadi 8 karena ada opsi adb
+      index=$((pilih - 9))  # Diubah dari 8 menjadi 9 karena ada opsi baru
       if [ $index -ge 0 ] && [ $index -lt ${#DYN_NAMES[@]} ]; then
         cd "$HOME/${DYN_NAMES[$index]}" || {
           echo -e "\e[31m❌ Gagal masuk folder.\e[0m"
