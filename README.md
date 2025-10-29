@@ -53,8 +53,8 @@ cd MenuTx
 bash <(curl -fsSL https://raw.githubusercontent.com/marnezcr/MenuTx/main/install.sh)
 
 ```
-## Sumber Asli
+## Sumber
 ```
-Lupa belum ketemu  yang tahu info
+https://github.com/windrase/my-termux-menu
 ```
 
