@@ -5,263 +5,466 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-# Paket dikecualikan
-EXCLUDE="com.termux"
+# Konfigurasi
+EXCLUDE="com.termux" # Termux otomatis dikecualikan
+CACHEDIR="$HOME/.ramoptimizer_cache"
+mkdir -p "$CACHEDIR"
+
+# Konfigurasi Dirty Flags (Penanda bahwa cache perlu update)
+# Flag ini hanya muncul jika ada perubahan status (freeze/uninstall)
+DIRTY_FLAG_NONSYSTEM="$CACHEDIR/dirty_nonsystem.flag"
+DIRTY_FLAG_SYSTEM="$CACHEDIR/dirty_system.flag"
+DIRTY_FLAG_DISABLED="$CACHEDIR/dirty_disabled.flag"
+
+## --- Fungsi Umum --- ##
 
 # Cek root
 check_root() {
-    if ! su -mm -c "id" >/dev/null 2>&1; then
-        echo -e "${RED}[!] ROOT tidak tersedia atau su gagal!${NC}"
+    su -mm -c "id" >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}[!] Butuh ROOT!${NC}"
         return 1
     fi
-    return 0
 }
 
-# Deteksi keyboard
+# Deteksi keyboard (otomatis dilindungi)
 get_keyboard() {
     kb=$(su -mm -c "settings get secure default_input_method" 2>/dev/null | cut -d'/' -f1)
-    [[ -n "$kb" && "$kb" != "null" ]] && echo "$kb" && return
-    for pkg in com.google.android.inputmethod.latin com.samsung.android.honeyboard com.touchtype.swiftkey com.gboard; do
-        su -mm -c "pm list packages" 2>/dev/null | grep -q "^package:$pkg$" && echo "$pkg" && return
+    if [[ -n "$kb" && "$kb" != "null" ]]; then
+        echo "$kb"
+        return
+    fi
+    # Fallback list umum
+    for pkg in com.google.android.inputmethod.latin \
+               com.samsung.android.honeyboard \
+               com.touchtype.swiftkey \
+               com.google.android.googlequicksearchbox; do
+        if su -mm -c "pm path $pkg" >/dev/null 2>&1; then
+            echo "$pkg"
+            return
+        fi
     done
     echo ""
 }
 
-KEYBOARD=$(get_keyboard)
-[[ -n "$KEYBOARD" ]] && EXCLUDE="$EXCLUDE $KEYBOARD"
+# Menentukan Flag File berdasarkan filter
+get_dirty_file_by_filter() {
+    case "$1" in
+        "-3") echo "$DIRTY_FLAG_NONSYSTEM" ;;
+        "-s") echo "$DIRTY_FLAG_SYSTEM" ;;
+        "-d") echo "$DIRTY_FLAG_DISABLED" ;;
+    esac
+}
 
-# === 1. Force Stop Non-System ===
-force_stop_non_system() {
-    echo -e "${BLUE}Memaksa berhenti app non-system...${NC}\n"
-    local stopped=0 failed=0
-    mapfile -t pkgs < <(su -mm -c "pm list packages -3" 2>/dev/null | cut -d':' -f2)
+# Cache daftar paket
+get_cached_packages() {
+    local filter="$1"
+    local filename=$(echo "$filter" | tr -d '-')
+    local file="$CACHEDIR/pkg_${filename}.cache"
+    local dirty_flag=$(get_dirty_file_by_filter "$filter")
+
+    if [[ -f "$file" && ! -f "$dirty_flag" ]]; then
+        cat "$file"
+        return
+    fi
+    
+    echo -e "${YELLOW}Memperbarui daftar paket ($filter)...${NC}" >&2
+    su -mm -c "pm list packages $filter" 2>/dev/null | cut -d':' -f2 | sort > "$file"
+    cat "$file"
+}
+
+# --- OPTIMIZED GET LABELS (PARALLEL VERSION) ---
+get_labels() {
+    local filter="$1"
+    local filename=$(echo "$filter" | tr -d '-')
+    local file="$CACHEDIR/label_${filename}.cache"
+    local dirty_flag=$(get_dirty_file_by_filter "$filter")
+
+    # 1. Cek Cache
+    if [[ -f "$file" && ! -f "$dirty_flag" ]]; then
+        cat "$file"
+        return
+    fi
+
+    rm -f "$dirty_flag"
+    > "$file" # Kosongkan file cache
+    
+    mapfile -t pkgs < <(get_cached_packages "$filter") 
+    local total_pkgs=${#pkgs[@]}
+    [[ $total_pkgs -eq 0 ]] && return
+
+    echo -e "${YELLOW}Memperbarui label info ($filter)...${NC}" >&2
+    echo -e "${BLUE}Memproses $total_pkgs aplikasi secara paralel (Batch Mode)...${NC}" >&2
+
+    # 2. Konfigurasi Batch (15 app sekaligus agar cepat tapi HP tidak lag)
+    local BATCH_SIZE=15
+    local batch_cmd=""
+    local count=0
+    local processed=0
+
+    # 3. Loop Paket
     for pkg in "${pkgs[@]}"; do
-        [[ " $EXCLUDE " == *" $pkg "* ]] && continue
-        if su -mm -c "am force-stop '$pkg'" >/dev/null 2>&1; then
-            echo -e "   ${RED}STOPPED:${NC} $pkg"
-            ((stopped++))
-        else
-            echo -e "   ${GREEN}FAILED :${NC} $pkg"
-            ((failed++))
+        # Command Extraction: Dump -> Grep Label -> Sed Clean -> Format output "pkg|label"
+        # Kita jalankan di background (&) agar jalan bersamaan
+        local cmd="( raw=\$(pm dump $pkg | grep -m1 'android:label'); \
+                    val=\${raw#*label=}; val=\${val//\\\"/}; \
+                    echo \"$pkg|\${val:-$pkg}\" ) & "
+        
+        batch_cmd+="$cmd"
+        ((count++))
+
+        # Jika batch penuh, eksekusi
+        if (( count >= BATCH_SIZE )); then
+            # 'wait' penting agar script menunggu 15 proses ini selesai sebelum lanjut
+            su -mm -c "$batch_cmd wait" >> "$file"
+            
+            batch_cmd=""
+            count=0
+            processed=$((processed + BATCH_SIZE))
+            # Tampilkan progres sederhana
+            echo -ne " Progress: $processed / $total_pkgs \r" >&2
         fi
     done
-    echo -e "\n${YELLOW}Selesai: ${RED}$stopped${NC} stopped, ${GREEN}$failed${NC} failed${NC}"
+
+    # 4. Eksekusi sisa batch terakhir (jika ada)
+    if [[ -n "$batch_cmd" ]]; then
+        su -mm -c "$batch_cmd wait" >> "$file"
+        echo -ne " Progress: $total_pkgs / $total_pkgs \n" >&2
+    fi
+    
+    # 5. Sortir hasil agar rapi saat ditampilkan
+    sort -o "$file" "$file"
+    cat "$file"
 }
 
-# === 2. Force Stop Semua (ROOT) ===
-force_stop_all() {
+# Fungsi menandai cache kotor (Perlu update nanti)
+mark_cache_dirty() {
+    local type="$1" # nonsys atau sys
+    touch "$DIRTY_FLAG_DISABLED"
+    if [[ "$type" == "nonsys" ]]; then
+        touch "$DIRTY_FLAG_NONSYSTEM"
+    elif [[ "$type" == "sys" ]]; then
+        touch "$DIRTY_FLAG_SYSTEM"
+    fi
+}
+
+# Opsi 8: Manual Refresh
+manual_refresh() {
     check_root || return
-    echo -e "${BLUE}Memaksa berhenti SEMUA app...${NC}\n"
-    local stopped=0 failed=0
-
-    # Non-system
-    mapfile -t pkgs < <(su -mm -c "pm list packages -3" 2>/dev/null | cut -d':' -f2)
-    for pkg in "${pkgs[@]}"; do
-        [[ " $EXCLUDE " == *" $pkg "* ]] && continue
-        su -mm -c "am force-stop '$pkg'" >/dev/null 2>&1 && { echo -e "   ${RED}STOPPED:${NC} $pkg"; ((stopped++)); } || { echo -e "   ${GREEN}FAILED :${NC} $pkg"; ((failed++)); }
+    while :; do
+        clear
+        echo -e "${BLUE}=== Refresh Cache Manual ===${NC}"
+        echo -e "Gunakan ini jika baru menginstall aplikasi baru.\n"
+        echo " 1. Refresh Cache ${GREEN}Non-System${NC}"
+        echo " 2. Refresh Cache ${YELLOW}System${NC}"
+        echo " 3. Refresh SEMUA"
+        echo " 0. Kembali"
+        
+        read -p "Pilih: " sub_pil
+        
+        case "$sub_pil" in
+            1) 
+                rm -f "$CACHEDIR/pkg_-3.cache" "$CACHEDIR/label_-3.cache"
+                touch "$DIRTY_FLAG_NONSYSTEM"
+                get_labels "-3" >/dev/null
+                ;;
+            2) 
+                rm -f "$CACHEDIR/pkg_-s.cache" "$CACHEDIR/label_-s.cache"
+                touch "$DIRTY_FLAG_SYSTEM"
+                get_labels "-s" >/dev/null
+                ;;
+            3) 
+                rm -f "$CACHEDIR"/*.cache
+                rm -f "$CACHEDIR"/*.flag
+                touch "$DIRTY_FLAG_NONSYSTEM" "$DIRTY_FLAG_SYSTEM" "$DIRTY_FLAG_DISABLED"
+                get_labels "-3" >/dev/null
+                get_labels "-s" >/dev/null
+                ;;
+            0) return ;;
+            *) echo -e "${RED}Salah!${NC}"; sleep 1; continue ;;
+        esac
+        echo -e "${GREEN}Cache berhasil diperbarui!${NC}"
+        read -p "Enter..."
     done
-
-    # System
-    mapfile -t pkgs < <(su -mm -c "pm list packages -s" 2>/dev/null | cut -d':' -f2)
-    for pkg in "${pkgs[@]}"; do
-        [[ " $EXCLUDE " == *" $pkg "* ]] && continue
-        su -mm -c "am force-stop '$pkg'" >/dev/null 2>&1 && { echo -e "   ${RED}STOPPED (sys):${NC} $pkg"; ((stopped++)); } || { echo -e "   ${GREEN}FAILED (sys):${NC} $pkg"; ((failed++)); }
-    done
-
-    echo -e "\n${YELLOW}Selesai: ${RED}$stopped${NC} stopped, ${GREEN}$failed${NC} failed${NC}"
 }
 
-# === 3 & 4. Bekukan / Aktifkan ===
-freeze_apps() {
-    local is_system=$1 title="Non-System" filter="-3"
-    [[ $is_system -eq 1 ]] && title="System" && filter="-s"
-    [[ $is_system -eq 1 ]] && ! check_root && return
+## --- Fungsi Utama Menu --- ##
+
+# 1. Force stop non-system
+stop_non_system() {
+    check_root || return
+    echo -e "${BLUE}Force stop non-system apps...${NC}"
+    mapfile -t pkgs < <(get_cached_packages "-3")
+    for pkg in "${pkgs[@]}"; do
+        if [[ " $EXCLUDE $KEYBOARD " =~ " $pkg " ]]; then continue; fi
+        su -mm -c "am force-stop '$pkg'" >/dev/null 2>&1
+    done
+    echo -e "${YELLOW}Selesai force stop non-system.${NC}"
+}
+
+# 2. Force stop semua
+stop_all() {
+    check_root || return
+    echo -e "${BLUE}Force stop SEMUA apps...${NC}"
+    for f in "-3" "-s"; do
+        mapfile -t pkgs < <(get_cached_packages "$f")
+        for pkg in "${pkgs[@]}"; do
+            if [[ " $EXCLUDE $KEYBOARD " =~ " $pkg " ]]; then continue; fi
+            su -mm -c "am force-stop '$pkg'" >/dev/null 2>&1
+        done
+    done
+    echo -e "${YELLOW}Selesai force stop semua.${NC}"
+}
+
+# 3 & 4. Bekukan / Aktifkan
+freeze_menu() {
+    local sys=$1
+    local dirty_type=""
+    
+    if (( sys == 1 )); then
+        check_root || return
+        local title="System"
+        local filter="-s"
+        dirty_type="sys"
+    else
+        local title="Non-System"
+        local filter="-3"
+        dirty_type="nonsys"
+    fi
 
     clear
-    echo -e "${BLUE}=== $title Apps ===${NC}\n"
-    mapfile -t pkgs < <(su -mm -c "pm list packages $filter" 2>/dev/null | cut -d':' -f2)
-    [[ ${#pkgs[@]} -eq 0 ]] && { echo -e "${RED}Tidak ada aplikasi $title.${NC}"; read -p "Enter untuk lanjut..."; return; }
+    echo -e "${BLUE}=== ${title} Apps ===${NC}\n"
 
-    declare -A seen
+    mapfile -t pkgs < <(get_cached_packages "$filter") 
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        echo -e "${RED}Tidak ada aplikasi.${NC}"
+        read -p "Enter..."
+        return
+    fi
+    mapfile -t lines < <(get_labels "$filter") 
+    
+    # Cek status disabled realtime
+    declare -A DISABLED_APPS
+    mapfile -t disabled_pkgs < <(su -mm -c "pm list packages -d" 2>/dev/null | cut -d':' -f2)
+    for d in "${disabled_pkgs[@]}"; do DISABLED_APPS["$d"]=1; done
+
+    declare -A label
+    for l in "${lines[@]}"; do if [[ "$l" ]]; then label[${l%%|*}]="${l#*|}"; fi; done
+
     for i in "${!pkgs[@]}"; do
-        pkg="${pkgs[$i]}"
-        name=$(su -mm -c "pm dump '$pkg'" 2>/dev/null | grep -m1 "android:label" | cut -d'=' -f2 | tr -d '"' || echo "$pkg")
-        [[ -z "$name" || "$name" == "null" ]] && name="$pkg"
-        if su -mm -c "pm list packages -d" 2>/dev/null | grep -q "^package:$pkg$"; then
-            [[ ! -v seen[$name] ]] && echo -e " $(printf "%3d. ${RED}Nonaktif${NC}  %s" $((i+1)) "$name")" && seen[$name]=1
+        local pkg_name="${pkgs[$i]}"
+        local name="${label[$pkg_name]:-$pkg_name}"
+        if [[ ${DISABLED_APPS["$pkg_name"]} ]]; then
+            printf " %3d. ${RED}Nonaktif${NC}  %s\n" $((i+1)) "$name"
         else
-            [[ ! -v seen[$name] ]] && echo -e " $(printf "%3d. ${GREEN}Aktif   ${NC}  %s" $((i+1)) "$name")" && seen[$name]=1
+            printf " %3d. ${GREEN}Aktif${NC}    %s\n" $((i+1)) "$name"
         fi
     done
 
     echo
-    read -p "Masukkan nomor aplikasi (pisah spasi, 0=keluar): " -a choices
-    [[ ${#choices[@]} -eq 0 || ${choices[0]} -eq 0 ]] && return
+    read -p "Pilih nomor (pisahkan spasi/koma, cth: 6,28): " raw_input
+    local clean_input="${raw_input//,/ }"
+    local pilihan=($clean_input)
 
-    for c in "${choices[@]}"; do
-        idx=$((c-1))
-        [[ $idx -lt 0 || $idx -ge ${#pkgs[@]} ]] && { echo -e "${RED}Nomor $c invalid!${NC}"; continue; }
+    if [[ ${#pilihan[@]} -eq 0 || ${pilihan[0]} == 0 ]]; then return; fi
+
+    local changed=0
+    for p in "${pilihan[@]}"; do
+        if ! [[ "$p" =~ ^[0-9]+$ ]]; then continue; fi
+        idx=$((p-1))
+        if [[ $idx -lt 0 || $idx -ge ${#pkgs[@]} ]]; then continue; fi
+        
         pkg="${pkgs[$idx]}"
-        name=$(su -mm -c "pm dump '$pkg'" 2>/dev/null | grep -m1 "android:label" | cut -d'=' -f2 | tr -d '"' || echo "$pkg")
+        name="${label[$pkg]:-$pkg}"
 
-        if su -mm -c "pm list packages -d" 2>/dev/null | grep -q "^package:$pkg$"; then
-            # Aktifkan
-            if [[ $is_system -eq 1 ]]; then
-                su -mm -c "cmd package enable '$pkg'" >/dev/null 2>&1 && echo -e "${GREEN}Aktif: $name${NC}" || echo -e "${RED}GAGAL! $name${NC}"
+        if [[ ${DISABLED_APPS["$pkg"]} ]]; then
+            if su -mm -c "cmd package enable '$pkg'" >/dev/null 2>&1; then
+                echo -e "${GREEN}Diaktifkan → ${name}${NC}"
+                changed=1
             else
-                su -mm -c "cmd package enable '$pkg'" >/dev/null 2>&1 && echo -e "${GREEN}Aktif: $name${NC}" || echo -e "${RED}GAGAL! $name${NC}"
+                echo -e "${RED}Gagal → ${name}${NC}"
             fi
         else
-            # Bekukan
-            if [[ $is_system -eq 1 ]]; then
-                su -mm -c "cmd package disable-user --user 0 '$pkg'" >/dev/null 2>&1 && echo -e "${RED}DIBEKUKAN: $name${NC}" || echo -e "${RED}GAGAL (dilindungi)! $name${NC}"
+            if su -mm -c "cmd package disable-user --user 0 '$pkg'" >/dev/null 2>&1; then
+                echo -e "${RED}Dibekukan → ${name}${NC}"
+                changed=1
             else
-                su -mm -c "cmd package disable-user --user 0 '$pkg'" >/dev/null 2>&1 && echo -e "${RED}DIBEKUKAN: $name${NC}" || echo -e "${RED}GAGAL! $name${NC}"
+                echo -e "${RED}Gagal (Protected) → ${name}${NC}"
             fi
         fi
     done
-    read -p "Enter untuk lanjut..."
+    
+    if (( changed == 1 )); then 
+        mark_cache_dirty "$dirty_type"
+        echo -e "${YELLOW}Cache ditandai untuk update berikutnya.${NC}"
+    fi
+    read -p "Enter untuk kembali..."
 }
 
-# === 5. List Aplikasi Nonaktif ===
-list_inactive_apps() {
+# 5. List nonaktif
+list_disabled() {
     check_root || return
     clear
-    echo -e "${BLUE}=== List Aplikasi Nonaktif ===${NC}\n"
-    mapfile -t pkgs < <(su -mm -c "pm list packages -d" 2>/dev/null | cut -d':' -f2)
-    [[ ${#pkgs[@]} -eq 0 ]] && { echo -e "${RED}Tidak ada aplikasi nonaktif.${NC}"; read -p "Enter untuk lanjut..."; return; }
+    echo -e "${BLUE}=== Aplikasi Nonaktif ===${NC}\n"
+    
+    mapfile -t pkgs < <(get_cached_packages "-d")
+    
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        echo -e "${RED}Tidak ada aplikasi nonaktif.${NC}"
+        read -p "Enter..."
+        return
+    fi
+    
+    # Load dictionary labels
+    declare -A label
+    if [[ -f "$CACHEDIR/label_-3.cache" ]]; then
+        while IFS='|' read -r p l; do label["$p"]="$l"; done < "$CACHEDIR/label_-3.cache"
+    fi
+    if [[ -f "$CACHEDIR/label_-s.cache" ]]; then
+        while IFS='|' read -r p l; do label["$p"]="$l"; done < "$CACHEDIR/label_-s.cache"
+    fi
 
-    declare -A seen
     for i in "${!pkgs[@]}"; do
-        pkg="${pkgs[$i]}"
-        name=$(su -mm -c "pm dump '$pkg'" 2>/dev/null | grep -m1 "android:label" | cut -d'=' -f2 | tr -d '"' || echo "$pkg")
-        [[ -z "$name" || "$name" == "null" ]] && name="$pkg"
-        [[ ! -v seen[$name] ]] && echo -e " $(printf "%3d. ${RED}Nonaktif${NC}  %s" $((i+1)) "$name")" && seen[$name]=1
+        local pkg_name="${pkgs[$i]}"
+        local name="${label[$pkg_name]:-$pkg_name}"
+        printf " %3d. ${RED}Nonaktif${NC}  %s\n" $((i+1)) "$name"
     done
 
-    echo
-    read -p "Masukkan nomor aplikasi untuk aktifkan (pisah spasi, 0=keluar): " -a choices
-    [[ ${#choices[@]} -eq 0 || ${choices[0]} -eq 0 ]] && return
+    read -p "Pilih nomor (pisahkan spasi/koma, cth: 6,28): " raw_input
+    local clean_input="${raw_input//,/ }"
+    local pilihan=($clean_input)
 
-    for c in "${choices[@]}"; do
-        idx=$((c-1))
-        [[ $idx -lt 0 || $idx -ge ${#pkgs[@]} ]] && { echo -e "${RED}Nomor $c invalid!${NC}"; continue; }
+    if [[ ${#pilihan[@]} -eq 0 || ${pilihan[0]} == 0 ]]; then return; fi
+
+    local changed=0
+    for p in "${pilihan[@]}"; do
+        if ! [[ "$p" =~ ^[0-9]+$ ]]; then continue; fi
+        idx=$((p-1))
+        if [[ $idx -lt 0 || $idx -ge ${#pkgs[@]} ]]; then continue; fi
         pkg="${pkgs[$idx]}"
-        name=$(su -mm -c "pm dump '$pkg'" 2>/dev/null | grep -m1 "android:label" | cut -d'=' -f2 | tr -d '"' || echo "$pkg")
+        
         if su -mm -c "cmd package enable '$pkg'" >/dev/null 2>&1; then
-            echo -e "${GREEN}Aktif: $name${NC}"
-        else
-            echo -e "${RED}GAGAL! $name${NC}"
+            echo -e "${GREEN}Diaktifkan → $pkg${NC}"
+            changed=1
         fi
     done
-    read -p "Enter untuk lanjut..."
+    
+    if (( changed == 1 )); then 
+        mark_cache_dirty "nonsys"
+        mark_cache_dirty "sys"
+    fi
+    read -p "Enter..."
 }
 
-# === 6. Hapus App (Non-System) ===
-uninstall_non_system_apps() {
-    check_root || return
-    clear
-    echo -e "${BLUE}=== List Aplikasi Non-System untuk Dihapus ===${NC}\n"
-    mapfile -t pkgs < <(su -mm -c "pm list packages -3" 2>/dev/null | cut -d':' -f2)
-    [[ ${#pkgs[@]} -eq 0 ]] && { echo -e "${RED}Tidak ada aplikasi non-system.${NC}"; read -p "Enter untuk lanjut..."; return; }
+# 6 & 7. Hapus app
+uninstall_menu() {
+    local sys=$1
+    local dirty_type=""
+    local filter=""
+    
+    if (( sys == 1 )); then
+        check_root || return
+        local title="SYSTEM ${RED}(BAHAYA!)${NC}"
+        filter="-s"
+        dirty_type="sys"
+    else
+        local title="Non-System"
+        filter="-3"
+        dirty_type="nonsys"
+    fi
 
-    declare -A seen
+    clear
+    echo -e "${BLUE}=== Hapus ${title} ===${NC}\n"
+    mapfile -t pkgs < <(get_cached_packages "$filter")
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        echo -e "${RED}Tidak ada.${NC}"; read -p "Enter..."; return
+    fi
+
+    mapfile -t lines < <(get_labels "$filter")
+    declare -A label
+    for l in "${lines[@]}"; do if [[ "$l" ]]; then label[${l%%|*}]="${l#*|}"; fi; done
+
     for i in "${!pkgs[@]}"; do
-        pkg="${pkgs[$i]}"
-        name=$(su -mm -c "pm dump '$pkg'" 2>/dev/null | grep -m1 "android:label" | cut -d'=' -f2 | tr -d '"' || echo "$pkg")
-        [[ -z "$name" || "$name" == "null" ]] && name="$pkg"
-        [[ ! -v seen[$name] ]] && echo -e " $(printf "%3d. ${YELLOW}%s${NC}" $((i+1)) "$name")" && seen[$name]=1
+        local pkg_name="${pkgs[$i]}"
+        local name="${label[$pkg_name]:-$pkg_name}"
+        printf " %3d. ${YELLOW}%s${NC}\n" $((i+1)) "$name"
     done
 
-    echo
-    read -p "Masukkan nomor aplikasi untuk dihapus (pisah spasi, 0=keluar): " -a choices
-    [[ ${#choices[@]} -eq 0 || ${choices[0]} -eq 0 ]] && return
+    read -p "Pilih HAPUS (pisahkan spasi/koma, cth: 6,28): " raw_input
+    local clean_input="${raw_input//,/ }"
+    local pilihan=($clean_input)
 
-    for c in "${choices[@]}"; do
-        idx=$((c-1))
-        [[ $idx -lt 0 || $idx -ge ${#pkgs[@]} ]] && { echo -e "${RED}Nomor $c invalid!${NC}"; continue; }
+    if [[ ${#pilihan[@]} -eq 0 || ${pilihan[0]} == 0 ]]; then return; fi
+
+    local changed=0
+    for p in "${pilihan[@]}"; do
+        if ! [[ "$p" =~ ^[0-9]+$ ]]; then continue; fi
+        idx=$((p-1))
+        if [[ $idx -lt 0 || $idx -ge ${#pkgs[@]} ]]; then continue; fi
+        
         pkg="${pkgs[$idx]}"
-        name=$(su -mm -c "pm dump '$pkg'" 2>/dev/null | grep -m1 "android:label" | cut -d'=' -f2 | tr -d '"' || echo "$pkg")
+        name="${label[$pkg]:-$pkg}"
+        
+        if (( sys == 1 )); then
+            read -p "Yakin hapus $name permanen? (y/n) " k
+            [[ "$k" != "y" ]] && continue
+        fi
+        
         if su -mm -c "pm uninstall '$pkg'" >/dev/null 2>&1; then
-            echo -e "${GREEN}Dihapus: $name${NC}"
+            echo -e "${GREEN}Terhapus → ${name}${NC}"
+            changed=1
         else
-            echo -e "${RED}GAGAL! $name${NC}"
+            echo -e "${RED}Gagal hapus → ${name}${NC}"
         fi
     done
-    read -p "Enter untuk lanjut..."
+    
+    if (( changed == 1 )); then mark_cache_dirty "$dirty_type"; fi
+    read -p "Enter..."
 }
 
-# === 7. Hapus System App ===
-uninstall_system_apps() {
-    check_root || return
-    clear
-    echo -e "${BLUE}=== List Aplikasi Sistem untuk Dihapus ===${NC}\n"
-    mapfile -t pkgs < <(su -mm -c "pm list packages -s" 2>/dev/null | cut -d':' -f2)
-    [[ ${#pkgs[@]} -eq 0 ]] && { echo -e "${RED}Tidak ada aplikasi sistem.${NC}"; read -p "Enter untuk lanjut..."; return; }
+## --- Eksekusi Utama --- ##
 
-    declare -A seen
-    for i in "${!pkgs[@]}"; do
-        pkg="${pkgs[$i]}"
-        name=$(su -mm -c "pm dump '$pkg'" 2>/dev/null | grep -m1 "android:label" | cut -d'=' -f2 | tr -d '"' || echo "$pkg")
-        [[ -z "$name" || "$name" == "null" ]] && name="$pkg"
-        [[ ! -v seen[$name] ]] && echo -e " $(printf "%3d. ${YELLOW}%s${NC}" $((i+1)) "$name")" && seen[$name]=1
-    done
+KEYBOARD=$(get_keyboard)
+if [[ -n "$KEYBOARD" ]]; then EXCLUDE="$EXCLUDE $KEYBOARD"; fi
 
-    echo
-    read -p "Masukkan nomor aplikasi untuk dihapus (pisah spasi, 0=keluar): " -a choices
-    [[ ${#choices[@]} -eq 0 || ${choices[0]} -eq 0 ]] && return
+if check_root >/dev/null 2>&1; then
+    get_labels "-3" >/dev/null 2>&1
+    get_labels "-s" >/dev/null 2>&1
+else
+    echo -e "${YELLOW}Mode Non-Root.${NC}"
+fi
 
-    for c in "${choices[@]}"; do
-        idx=$((c-1))
-        [[ $idx -lt 0 || $idx -ge ${#pkgs[@]} ]] && { echo -e "${RED}Nomor $c invalid!${NC}"; continue; }
-        pkg="${pkgs[$idx]}"
-        name=$(su -mm -c "pm dump '$pkg'" 2>/dev/null | grep -m1 "android:label" | cut -d'=' -f2 | tr -d '"' || echo "$pkg")
-        echo -e "${RED}PERINGATAN: Aplikasi sistem ($name) akan dihapus permanen! Lanjutkan? (Y/N)${NC}"
-        read -p "Pilih (Y/N): " confirm
-        if [[ "$confirm" == "Y" || "$confirm" == "y" ]]; then
-            if su -mm -c "pm uninstall '$pkg'" >/dev/null 2>&1; then
-                echo -e "${GREEN}Dihapus: $name${NC}"
-            else
-                echo -e "${RED}GAGAL! $name${NC}"
-            fi
-        else
-            echo -e "${YELLOW}Dibatalkan: $name${NC}"
-        fi
-    done
-    read -p "Enter untuk lanjut..."
-}
-
-# === MENU ===
 while :; do
     clear
     echo -e "${YELLOW}╔══════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}       RAM OPTIMIZER BY MARNEZ  ${NC}"
-    echo -e "${YELLOW}╚══════════════════════════════════════╝${NC}"
-    echo " 1. Stop non-system"
-    echo " 2. Stop semua "
-    echo " 3. Bekukan non-system"
-    echo " 4. Bekukan system"
-    echo " 5. List aplikasi nonaktif"
-    echo " 6. Hapus App"
-    echo " 7. Hapus System App"
-    echo " 0. Keluar"
-    [[ -n "$KEYBOARD" ]] && echo -e "Keyboard: ${BLUE}$KEYBOARD${NC}"
+    echo -e "${GREEN}       RAM OPTIMIZER (BY MARNEZ)     ${NC}"
+    echo -e "${YELLOW}╚══════════════════════════════════════╝${NC}\n"
+    
+    echo " 1. Stop App Non-System "
+    echo -e " 2. Stop App ${YELLOW}SYSTEM ${NC}"
+    echo " 3. Bekukan App Non-System "
+    echo -e " 4. Bekukan App ${YELLOW}SYSTEM ${NC}"
+    echo " 5. Aktifkan App"
+    echo " 6. Hapus App Non-System "
+    echo -e " 7. Hapus App ${YELLOW}SYSTEM ${NC}"
+    echo " 8. Refresh Cache"
+    echo -e " 0. ${GREEN}KELUAR ${NC}"
+    
     echo
-
-    read -p "Pilih: " m
-    case "$m" in
-        1) force_stop_non_system ;;
-        2) force_stop_all ;;
-        3) freeze_apps 0 ;;
-        4) freeze_apps 1 ;;
-        5) list_inactive_apps ;;
-        6) uninstall_non_system_apps ;;
-        7) uninstall_system_apps ;;
-        0) echo -e "${GREEN}Selesai!${NC}"; exit 0 ;;
-        *) echo -e "${RED}Salah!${NC}" ;;
+    read -p "Pilih: " pil
+    case "$pil" in
+        1) stop_non_system ;;
+        2) stop_all ;;
+        3) freeze_menu 0 ;;
+        4) freeze_menu 1 ;;
+        5) list_disabled ;;
+        6) uninstall_menu 0 ;;
+        7) uninstall_menu 1 ;;
+        8) manual_refresh ;;
+        0) exit 0 ;;
+        *) echo -e "${RED}Salah!${NC}"; sleep 1 ;;
     esac
-    echo
-    read -p "Enter untuk lanjut..."
+    if [[ "$pil" != "0" ]]; then :; fi
 done
