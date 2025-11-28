@@ -1,9 +1,17 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
+# Warna
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
 # Menu Termux-ADB
 clear
-echo "=== Menu Termux-ADB ==="
-
+echo -e "${YELLOW}╔══════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}    MENU TERMUX ADB WIFI (BY MARNEZ)     ${NC}"
+    echo -e "${YELLOW}╚══════════════════════════════════════╝${NC}\n"
 # Direktori default untuk mencari file .apk
 APK_DIR="/storage/emulated/0"
 
